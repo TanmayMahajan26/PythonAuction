@@ -1,212 +1,512 @@
-import tkinter as tk
-from tkinter import messagebox
-import turtle
-import datetime
+import customtkinter as ctk
+from datetime import datetime, timedelta
+import threading
+import time
 
-class Artifact:
-    def __init__(self, name, description, starting_price):
+# Set the default appearance and color theme
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("green")
+
+class AuctionItem:
+    def __init__(self, name, starting_price, duration_minutes, description=None):
         self.name = name
-        self.description = description
+        self.current_price = starting_price
         self.starting_price = starting_price
-        self.bids = []
-        self.is_active = True
-        self.end_time = None
-
-    def place_bid(self, user, amount):
-        if not self.is_active:
-            return False
-        if amount <= self.starting_price and not self.bids:
-            return False
-        if self.bids and amount <= self.bids[-1]['amount']:
-            return False
-        self.bids.append({'user': user, 'amount': amount})
-        return True
-
-    def end_auction(self):
-        self.is_active = False
-        self.end_time = datetime.datetime.now()
-        return self.bids[-1] if self.bids else None
-
-class User:
-    def __init__(self, username):
-        self.username = username
-
-class Auction:
-    def __init__(self):
-        self.artifacts = []
-        self.users = []
-
-    def add_artifact(self, artifact):
-        self.artifacts.append(artifact)
-
-    def register_user(self, user):
-        self.users.append(user)
-
-    def start_auction(self, artifact):
-        artifact.is_active = True
-        artifact.end_time = datetime.datetime.now() + datetime.timedelta(seconds=20)  # 20 seconds auction
+        self.highest_bidder = "No bids yet"
+        self.end_time = datetime.now() + timedelta(minutes=duration_minutes)
+        self.active = True
+        self.bid_history = []
+        self.description = description
+        self.min_increment = starting_price * 0.05  # 5% minimum increment
 
 class AuctionApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Online Auction System for Indian Artifacts")
+    def __init__(self):
+        self.root = ctk.CTk()
+        self.root.title("Modern Auction System")
+        self.root.geometry("1200x800")
         
-        self.auction = Auction()
-        self.current_artifact = None
-        self.user = None  # Initialize user to None
-        self.timer_running = False
-
-        # User Registration
-        self.username_label = tk.Label(root, text="Enter your username:")
-        self.username_label.pack()
-        self.username_entry = tk.Entry(root)
-        self.username_entry.pack()
-        self.register_button = tk.Button(root, text="Register", command=self.register_user)
-        self.register_button.pack()
-
-        # Artifact Details
-        self.artifact_name_label = tk.Label(root, text="Artifact Name:")
-        self.artifact_name_label.pack()
-        self.artifact_name_entry = tk.Entry(root)
-        self.artifact_name_entry.pack()
-
-        self.artifact_desc_label = tk.Label(root, text="Artifact Description:")
-        self.artifact_desc_label.pack()
-        self.artifact_desc_entry = tk.Entry(root)
-        self.artifact_desc_entry.pack()
-
-        self.starting_price_label = tk.Label(root, text="Starting Price:")
-        self.starting_price_label.pack()
-        self.starting_price_entry = tk.Entry(root)
-        self.starting_price_entry.pack()
-
-        self.add_artifact_button = tk.Button(root, text="Add Artifact", command=self.add_artifact)
-        self.add_artifact_button.pack()
-
-        self.start_auction_button = tk.Button(root, text="Start Auction", command=self.start_auction)
-        self.start_auction_button.pack()
-
-        self.bid_amount_label = tk.Label(root, text="Enter your bid amount:")
-        self.bid_amount_label.pack()
-        self.bid_amount_entry = tk.Entry(root)
-        self.bid_amount_entry.pack()
-
-        self.place_bid_button = tk.Button(root, text="Place Bid", command=self.place_bid)
-        self.place_bid_button.pack()
-
-        self.result_label = tk.Label(root, text="")
-        self.result_label.pack()
-
-        self.current_bid_label = tk.Label(root, text="Current Highest Bid: None")
-        self.current_bid_label.pack()
-
-        self.timer_label = tk.Label(root, text="Time Remaining: 20 seconds")
-        self.timer_label.pack()
-
-        # Initialize turtle graphics
-        self.turtle_canvas = turtle.ScrolledCanvas(root)
-        self.turtle_canvas.pack(fill=tk.BOTH, expand=tk.YES)
-        self.turtle_screen = turtle.TurtleScreen(self.turtle_canvas)
-        self.turtle = turtle.RawTurtle(self.turtle_screen)
-
-    def register_user(self):
-        username = self.username_entry.get()
-        if username:
-            self.user = User(username)
-            messagebox.showinfo("Registration", f" User  '{username}' registered successfully!")
-        else:
-            messagebox.showwarning("Input Error", "Please enter a username.")
-
-    def add_artifact(self):
-        name = self.artifact_name_entry.get()
-        description = self.artifact_desc_entry.get()
-        starting_price = self.starting_price_entry.get()
-
-        if name and description and starting_price.isdigit():
-            artifact = Artifact(name, description, int(starting_price))
-            self.auction.add_artifact(artifact)
-            self.current_artifact = artifact
-            messagebox.showinfo("Artifact Added", f"Artifact '{name}' added successfully!")
-        else:
-            messagebox.showwarning("Input Error", "Please fill in all fields correctly.")
-
-    def start_auction(self):
-        if self.current_artifact:
-            self.auction.start_auction(self.current_artifact)
-            messagebox.showinfo("Auction Started", f"Auction for '{self.current_artifact.name}' has started!")
-            self.draw_artifact()
-            self.start_timer()
-        else:
-            messagebox.showwarning("Auction Error", "No artifact to auction.")
-
+        # Sample auction items
+        self.items = [
+            AuctionItem(
+                "Vintage Rolex Submariner",
+                1000,
+                1,
+                "A stunning 1960s Rolex Submariner ref. 5513. Original dial, pristine condition. Includes box and papers."
+            ),
+            AuctionItem(
+                "Ming Dynasty Vase",
+                2500,
+                45,
+                "Exquisite 15th century Ming vase featuring traditional blue and white porcelain. Height: 30cm. Museum quality."
+            ),
+            AuctionItem(
+                "Monet Original Sketch",
+                5000,
+                30,
+                "Rare preliminary sketch by Claude Monet. Dated 1923. Authenticated by Christie's. Size: 20x30cm."
+            )
+        ]
+        
+        self.setup_gui()
+        self.update_thread = threading.Thread(target=self.update_times, daemon=True)
+        self.update_thread.start()
+    
+    def setup_gui(self):
+        # Create main layout with enhanced padding
+        self.sidebar = ctk.CTkFrame(self.root, width=350)
+        self.sidebar.pack(side="left", fill="y", padx=20, pady=20)
+        self.sidebar.pack_propagate(False)
+        
+        self.main_frame = ctk.CTkFrame(self.root)
+        self.main_frame.pack(side="right", fill="both", expand=True, padx=20, pady=20)
+        
+        self.create_sidebar()
+        self.create_main_content()
+    
+    def create_sidebar(self):
+        # Title
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Bid Control Panel",
+            font=ctk.CTkFont(size=24, weight="bold")
+        ).pack(pady=20)
+        
+        # Quick bid section
+        quick_bid_frame = ctk.CTkFrame(self.sidebar)
+        quick_bid_frame.pack(pady=15, fill="x", padx=20)
+        
+        ctk.CTkLabel(
+            quick_bid_frame,
+            text="Quick Bid",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(pady=5)
+        
+        btn_frame = ctk.CTkFrame(quick_bid_frame)
+        btn_frame.pack(fill="x")
+        
+        for amount in ["50", "100", "500"]:
+            ctk.CTkButton(
+                btn_frame,
+                text=f"+${amount}",
+                command=lambda a=amount: self.quick_bid(float(a)),
+                height=35
+            ).pack(side="left", padx=5, pady=5, expand=True)
+        
+        # Item selection
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Select Item",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(pady=(15, 5))
+        
+        self.selected_item = ctk.CTkComboBox(
+            self.sidebar,
+            values=[item.name for item in self.items],
+            width=300,
+            command=self.on_item_selected
+        )
+        self.selected_item.pack(pady=10)
+        
+        # Item details
+        self.item_details = ctk.CTkTextbox(self.sidebar, height=200, width=300)
+        self.item_details.pack(pady=10)
+        
+        # Bidding controls
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Your Information",
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(pady=(15, 5))
+        
+        self.bidder_name = ctk.CTkEntry(
+            self.sidebar,
+            width=300,
+            placeholder_text="Enter your name"
+        )
+        self.bidder_name.pack(pady=10)
+        
+        self.bid_amount = ctk.CTkEntry(
+            self.sidebar,
+            width=300,
+            placeholder_text="Enter bid amount ($)"
+        )
+        self.bid_amount.pack(pady=10)
+        
+        # Bid button
+        self.bid_button = ctk.CTkButton(
+            self.sidebar,
+            text="Place Bid",
+            command=self.place_bid,
+            width=300,
+            height=40,
+            corner_radius=32,
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.bid_button.pack(pady=20)
+        
+        # Theme switcher
+        ctk.CTkLabel(
+            self.sidebar,
+            text="Appearance",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(15, 5))
+        
+        self.appearance_mode = ctk.CTkOptionMenu(
+            self.sidebar,
+            values=["Dark", "Light", "System"],
+            command=self.change_appearance_mode,
+            width=300
+        )
+        self.appearance_mode.pack(pady=10)
+    
+    def create_main_content(self):
+        ctk.CTkLabel(
+            self.main_frame,
+            text="Live Auctions",
+            font=ctk.CTkFont(size=32, weight="bold")
+        ).pack(pady=20)
+        
+        self.items_frame = ctk.CTkScrollableFrame(self.main_frame)
+        self.items_frame.pack(fill="both", expand=True)
+        
+        self.item_cards = []
+        self.update_items_display()
+    
+    def create_item_card(self, item):
+        card = ctk.CTkFrame(self.items_frame)
+        card.pack(fill="x", padx=10, pady=10)
+        
+        # Item name
+        ctk.CTkLabel(
+            card,
+            text=item.name,
+            font=ctk.CTkFont(size=22, weight="bold")
+        ).pack(pady=10)
+        
+        # Price and bidder info
+        price_label = ctk.CTkLabel(
+            card,
+            text=f"Current Bid: ${item.current_price:,.2f}",
+            font=ctk.CTkFont(size=18)
+        )
+        price_label.pack(pady=5)
+        
+        bidder_label = ctk.CTkLabel(
+            card,
+            text=f"Highest Bidder: {item.highest_bidder}",
+            font=ctk.CTkFont(size=16)
+        )
+        bidder_label.pack(pady=5)
+        
+        # Time remaining
+        time_label = ctk.CTkLabel(
+            card,
+            text="Time Remaining: Calculating...",
+            font=ctk.CTkFont(size=16)
+        )
+        time_label.pack(pady=5)
+        
+        progress = ctk.CTkProgressBar(card, width=400)
+        progress.pack(pady=10)
+        progress.set(1)
+        
+        # Bid history button
+        ctk.CTkButton(
+            card,
+            text="View Bid History",
+            command=lambda: self.show_bid_history(item),
+            width=150
+        ).pack(pady=10)
+        
+        return {
+            "frame": card,
+            "price_label": price_label,
+            "bidder_label": bidder_label,
+            "time_label": time_label,
+            "progress": progress
+        }
+    
+    def quick_bid(self, amount):
+        if not self.selected_item.get():
+            self.show_error("Please select an item first")
+            return
+            
+        current_item = next((item for item in self.items if item.name == self.selected_item.get()), None)
+        if current_item:
+            self.bid_amount.delete(0, 'end')
+            self.bid_amount.insert(0, str(current_item.current_price + amount))
+    
+    def on_item_selected(self, choice):
+        selected_item = next((item for item in self.items if item.name == choice), None)
+        if selected_item:
+            self.item_details.delete('1.0', 'end')
+            self.item_details.insert('1.0', f"Description: {selected_item.description}\n\n")
+            self.item_details.insert('end', f"Starting Price: ${selected_item.starting_price:,.2f}\n")
+            self.item_details.insert('end', f"Current Price: ${selected_item.current_price:,.2f}\n")
+            self.item_details.insert('end', f"Min Increment: ${selected_item.min_increment:,.2f}\n")
+    
+    def update_items_display(self):
+        for widget in self.items_frame.winfo_children():
+            widget.destroy()
+        self.item_cards = []
+        
+        for item in self.items:
+            if item.active:
+                card = self.create_item_card(item)
+                self.item_cards.append((item, card))
+    
+    def update_times(self):
+        while True:
+            for item, card in self.item_cards:
+                if item.active:
+                    time_left = item.end_time - datetime.now()
+                    total_duration = timedelta(minutes=60)
+                    progress = max(0, min(1, time_left.total_seconds() / total_duration.total_seconds()))
+                    
+                    if time_left.total_seconds() > 0:
+                        time_str = str(timedelta(seconds=int(time_left.total_seconds())))
+                        card["time_label"].configure(text=f"Time Remaining: {time_str}")
+                        card["progress"].set(progress)
+                    else:
+                        card["time_label"].configure(text="Auction Ended")
+                        card["progress"].set(0)
+                        item.active = False
+                    
+                    card["price_label"].configure(text=f"Current Bid: ${item.current_price:,.2f}")
+                    card["bidder_label"].configure(text=f"Highest Bidder: {item.highest_bidder}")
+            
+            time.sleep(1)
+    
     def place_bid(self):
-        if self.current_artifact and self.current_artifact.is_active:
-            amount = self.bid_amount_entry.get()
-            if amount.isdigit():
-                amount = int(amount)
-                if self.current_artifact.place_bid(self.user, amount):
-                    messagebox.showinfo("Bid Placed", f"Bid of {amount} placed by {self.user.username}.")
-                    self.update_current_bid()
-                    self.reset_timer()  # Reset timer on new bid
-                else:
-                    messagebox.showwarning("Bid Error", "Bid must be higher than the starting price or last bid.")
-            else:
-                messagebox.showwarning("Input Error", "Please enter a valid bid amount.")
+        if not self.selected_item.get() or not self.bidder_name.get() or not self.bid_amount.get():
+            self.show_error("Please fill in all fields")
+            return
+        
+        try:
+            bid_amount = float(self.bid_amount.get())
+        except ValueError:
+            self.show_error("Bid amount must be a number")
+            return
+        
+        selected_item = next((item for item in self.items if item.name == self.selected_item.get()), None)
+        
+        if not selected_item:
+            self.show_error("Please select a valid item")
+            return
+        
+        if not selected_item.active:
+            self.show_error("This auction has ended")
+            return
+        
+        if bid_amount <= selected_item.current_price:
+            self.show_error(f"Bid must be higher than current price (${selected_item.current_price:,.2f})")
+            return
+        
+        selected_item.bid_history.append({
+            'bidder': self.bidder_name.get(),
+            'amount': bid_amount,
+            'time': datetime.now()
+        })
+        
+        selected_item.current_price = bid_amount
+        selected_item.highest_bidder = self.bidder_name.get()
+        self.show_success("Bid placed successfully!")
+    
+    def show_bid_history(self, item):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title(f"Bid History - {item.name}")
+        dialog.geometry("400x500")
+        dialog.grab_set()  # Make the dialog modal
+        dialog.transient(self.root)  # Set dialog to be transient for main window
+        
+        # Center the dialog relative to the main window
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (400 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (500 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Ensure dialog stays on top
+        dialog.lift()
+        dialog.focus_force()
+        
+        ctk.CTkLabel(
+            dialog,
+            text="Bid History",
+            font=ctk.CTkFont(size=20, weight="bold")
+        ).pack(pady=20)
+        
+        history_frame = ctk.CTkScrollableFrame(dialog)
+        history_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        if item.bid_history:
+            for bid in reversed(item.bid_history):
+                bid_frame = ctk.CTkFrame(history_frame)
+                bid_frame.pack(fill="x", pady=5)
+                
+                ctk.CTkLabel(
+                    bid_frame,
+                    text=f"{bid['bidder']}",
+                    font=ctk.CTkFont(weight="bold")
+                ).pack(pady=5)
+                
+                ctk.CTkLabel(
+                    bid_frame,
+                    text=f"${bid['amount']:,.2f}"
+                ).pack()
+                
+                ctk.CTkLabel(
+                    bid_frame,
+                    text=bid['time'].strftime("%Y-%m-%d %H:%M:%S"),
+                    font=ctk.CTkFont(size=12)
+                ).pack(pady=5)
         else:
-            messagebox.showwarning("Auction Error", "Auction is not active or no artifact available.")
-
-    def update_current_bid(self):
-        if self.current_artifact.bids:
-            highest_bid = self.current_artifact.bids[-1]
-            self.current_bid_label.config(text=f"Current Highest Bid: {highest_bid['amount']} by {highest_bid['user'].username}")
+            ctk.CTkLabel(
+                history_frame,
+                text="No bids yet"
+            ).pack(pady=20)
+        
+        ctk.CTkButton(
+            dialog,
+            text="Close",
+            command=dialog.destroy,
+            width=200
+        ).pack(pady=20)
+    
+    def show_error(self, message):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Error")
+        dialog.geometry("400x200")
+        dialog.grab_set()  # Make the dialog modal
+        dialog.transient(self.root)  # Set dialog to be transient for main window
+        
+        # Center the dialog relative to the main window
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (400 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (200 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Ensure dialog stays on top
+        dialog.lift()
+        dialog.focus_force()
+        
+        ctk.CTkLabel(
+            dialog,
+            text=message,
+            wraplength=350  # Add text wrapping for better readability
+        ).pack(pady=20)
+        
+        ctk.CTkButton(
+            dialog,
+            text="OK",
+            command=dialog.destroy,
+            width=200
+        ).pack(pady=10)
+    
+    def change_appearance_mode(self, new_appearance_mode):
+        ctk.set_appearance_mode(new_appearance_mode.lower())
+    
+    def run(self):
+        self.root.mainloop()
+    def show_winner(self, item):
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Auction Winner")
+        dialog.geometry("500x400")
+        dialog.grab_set()
+        dialog.transient(self.root)
+        
+        # Center the dialog
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (500 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (400 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        dialog.lift()
+        dialog.focus_force()
+        
+        # Create a frame for the content
+        content_frame = ctk.CTkFrame(dialog)
+        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Trophy emoji or symbol
+        ctk.CTkLabel(
+            content_frame,
+            text="🏆",
+            font=ctk.CTkFont(size=48)
+        ).pack(pady=(20, 10))
+        
+        # Auction ended announcement
+        ctk.CTkLabel(
+            content_frame,
+            text="Auction Ended!",
+            font=ctk.CTkFont(size=24, weight="bold")
+        ).pack(pady=10)
+        
+        # Item name
+        ctk.CTkLabel(
+            content_frame,
+            text=item.name,
+            font=ctk.CTkFont(size=20)
+        ).pack(pady=5)
+        
+        # Winner info
+        if item.highest_bidder != "No bids yet":
+            winner_text = f"Winner: {item.highest_bidder}\nWinning Bid: ${item.current_price:,.2f}"
         else:
-            self.current_bid_label.config(text="Current Highest Bid: None")
+            winner_text = "No bids were placed for this item"
+            
+        ctk.CTkLabel(
+            content_frame,
+            text=winner_text,
+            font=ctk.CTkFont(size=18),
+            wraplength=400
+        ).pack(pady=20)
+        
+        # Additional stats
+        if item.bid_history:
+            stats_frame = ctk.CTkFrame(content_frame)
+            stats_frame.pack(fill="x", pady=10)
+            
+            ctk.CTkLabel(
+                stats_frame,
+                text=f"Total Bids: {len(item.bid_history)}\n"
+                     f"Starting Price: ${item.starting_price:,.2f}\n"
+                     f"Price Increase: {((item.current_price - item.starting_price) / item.starting_price * 100):.1f}%",
+                font=ctk.CTkFont(size=14),
+                justify="left"
+            ).pack(pady=10, padx=10)
+        
+        # Close button
+        ctk.CTkButton(
+            content_frame,
+            text="Close",
+            command=dialog.destroy,
+            width=200,
+            height=40,
+            font=ctk.CTkFont(size=16)
+        ).pack(pady=20)
 
-    def draw_artifact(self):
-        self.turtle.clear()
-        self.turtle.penup()
-        self.turtle.goto(0, 0)
-        self.turtle.pendown()
-        self.turtle.write(f"Auctioning: {self.current_artifact.name}", align="center", font=("Arial", 16, "normal"))
-        self.turtle.penup()
-        self.turtle.goto(0, -20)
-        self.turtle.pendown()
-        self.turtle.write(f"Description: {self.current_artifact.description}", align="center", font=("Arial", 12, "normal"))
-        self.turtle.penup()
-        self.turtle.goto(0, -40)
-        self.turtle.pendown()
-        self.turtle.write(f"Starting Price: {self.current_artifact.starting_price}", align="center", font=("Arial", 12, "normal"))
-
-    def start_timer(self):
-        self.timer_running = True
-        self.remaining_time = 20  # Set to 20 seconds
-        self.update_timer()
-
-    def update_timer(self):
-        if self.timer_running and self.remaining_time > 0:
-            self.timer_label.config(text=f"Time Remaining: {self.remaining_time} seconds")
-            self.remaining_time -= 1
-            self.root.after(1000, self.update_timer)
-        elif self.remaining_time == 0:
-            self.end_auction()
-
-    def reset_timer(self):
-        self.remaining_time = 20  # Reset to 20 seconds
-        self.update_timer()
-
-    def end_auction(self):
-        self.timer_running = False
-        if self.current_artifact:
-            winner = self.current_artifact.end_auction()
-            if winner:
-                messagebox.showinfo("Auction Ended", f"Auction ended! Winner: {winner['user'].username} with bid of {winner['amount']}.")
-            else:
-                messagebox.showinfo("Auction Ended", "Auction ended with no bids.")
-            self.current_bid_label.config(text="Current Highest Bid: None")
-            self.result_label.config(text="")
-            self.timer_label.config(text="")
+    def update_times(self):
+        while True:
+            for item, card in self.item_cards:
+                if item.active:
+                    time_left = item.end_time - datetime.now()
+                    total_duration = timedelta(minutes=60)
+                    progress = max(0, min(1, time_left.total_seconds() / total_duration.total_seconds()))
+                    
+                    if time_left.total_seconds() > 0:
+                        time_str = str(timedelta(seconds=int(time_left.total_seconds())))
+                        card["time_label"].configure(text=f"Time Remaining: {time_str}")
+                        card["progress"].set(progress)
+                    else:
+                        if item.active:  # Check if we haven't shown the winner yet
+                            card["time_label"].configure(text="Auction Ended")
+                            card["progress"].set(0)
+                            item.active = False
+                            # Show winner announcement in the main thread
+                            self.root.after(0, lambda i=item: self.show_winner(i))
+                    
+                    card["price_label"].configure(text=f"Current Bid: ${item.current_price:,.2f}")
+                    card["bidder_label"].configure(text=f"Highest Bidder: {item.highest_bidder}")
+            
+            time.sleep(1)    
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AuctionApp(root)
-    root.mainloop()
+    app = AuctionApp()
+    app.run()
